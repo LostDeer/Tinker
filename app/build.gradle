@@ -1,0 +1,153 @@
+apply plugin: 'com.android.application'
+//apply tinker插件
+apply plugin: 'com.tencent.tinker.patch'
+android {
+    signingConfigs {
+        release {
+            keyAlias '449012803'
+            keyPassword '449012803'
+            storeFile file('D:/hotfix/Test/app/keyStore/release.jks')
+            storePassword '449012803'
+        }
+    }
+    compileSdkVersion 25
+    buildToolsVersion "25.0.2"
+    defaultConfig {
+        applicationId "com.meng"
+        minSdkVersion 14
+        targetSdkVersion 25
+        versionCode 1
+        versionName "1.0"
+        testInstrumentationRunner "android.support.test.runner.AndroidJUnitRunner"
+        multiDexEnabled true
+        multiDexKeepProguard file("keep_in_main_dex.txt")
+    }
+    buildTypes {
+        release {
+            minifyEnabled true
+            proguardFiles getDefaultProguardFile('proguard-android.txt'), 'proguard-rules.pro'
+            signingConfig signingConfigs.release
+        }
+        debug {
+            debuggable true
+            minifyEnabled true
+            signingConfig signingConfigs.release
+            proguardFiles getDefaultProguardFile('proguard-android.txt'), 'proguard-rules.pro'
+        }
+    }
+}
+
+dependencies {
+    compile fileTree(include: ['*.jar'], dir: 'libs')
+    androidTestCompile('com.android.support.test.espresso:espresso-core:2.2.2', {
+        exclude group: 'com.android.support', module: 'support-annotations'
+    })
+    compile 'com.android.support:appcompat-v7:25.1.0'
+    testCompile 'junit:junit:4.12'
+    compile('com.tencent.tinker:tinker-android-lib:1.7.7') { changing = true }
+    provided('com.tencent.tinker:tinker-android-anno:1.7.7') { changing = true }
+    compile 'com.android.support:multidex:1.0.1'
+}
+
+def bakPath = file("${buildDir}/bakApk/")
+
+ext {
+    tinkerEnabled = true
+    tinkerOldApkPath = "${bakPath}/app-debug-0216-10-18-16.apk"
+    //proguard mapping file to build patch apk
+    tinkerApplyMappingPath = "${bakPath}/"
+    //resource R.txt to build patch apk, must input if there is resource changed
+    tinkerApplyResourcePath = "${bakPath}/app-debug-0216-10-18-16-R.txt"
+}
+
+def getOldApkPath() {
+    return ext.tinkerOldApkPath
+}
+def getApplyMappingPath() {
+    return ext.tinkerApplyMappingPath
+}
+def getApplyResourceMappingPath() {
+    return  ext.tinkerApplyResourcePath
+}
+
+if (ext.tinkerEnabled) {
+    tinkerPatch {
+        oldApk = getOldApkPath()
+        ignoreWarning = false
+        useSign = true
+
+        buildConfig{
+            tinkerId = "1.0"
+            applyMapping = getApplyMappingPath()
+            applyResourceMapping = getApplyResourceMappingPath()
+        }
+
+        lib {
+
+            pattern = ["lib/armeabi/*.so"]
+        }
+
+        res {
+
+            pattern = ["res/*", "assets/*", "resources.arsc", "AndroidManifest.xml"]
+
+            ignoreChange = ["assetsmple_meta.txt"]
+
+            largeModSize = 100
+        }
+
+        sevenZip {
+
+            zipArtifact = "com.tencent.mm:SevenZip:1.1.10"
+        }
+
+        dex {
+
+            dexMode = "jar"
+
+            pattern = ["classes*.dex",
+                       "assetscondary-dex-?.jar"]
+
+            loader = ["com.tencent.tinker.loader.*",
+                      "com.tencent.tinker.*",
+                      "com.meng.app.AppApplication"
+            ]
+        }
+
+
+    }
+}
+
+android.applicationVariants.all { variant ->
+    /**
+     * task type, you want to bak
+     */
+    def taskName = variant.name
+
+    tasks.all {
+        if ("assemble${taskName.capitalize()}".equalsIgnoreCase(it.name)) {
+            it.doLast {
+                copy {
+                    def date = new Date().format("MMdd-HH-mm-ss")
+                    from "${buildDir}/outputs/apk/${project.getName()}-${taskName}.apk"
+                    into bakPath
+                    rename { String fileName ->
+                        fileName.replace("${project.getName()}-${taskName}.apk", "${project.getName()}-${taskName}-${date}.apk")
+                    }
+
+                    from "${buildDir}/outputs/mapping/${taskName}/mapping.txt"
+                    into bakPath
+                    rename { String fileName ->
+                        fileName.replace("mapping.txt", "${project.getName()}-${taskName}-${date}-mapping.txt")
+                    }
+
+                    from "${buildDir}/intermediates/symbols/${taskName}/R.txt"
+                    into bakPath
+                    rename { String fileName ->
+                        fileName.replace("R.txt", "${project.getName()}-${taskName}-${date}-R.txt")
+                    }
+                }
+            }
+        }
+    }
+}
